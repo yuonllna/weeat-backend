@@ -111,6 +111,18 @@ async def get_recommendations(
                 if menus:
                     selected_menu = random.choice(menus)
                 
+                # 해당 가게의 평균 평점과 리뷰 수 계산
+                rating_result = await conn.execute(
+                    text("SELECT AVG(rating), COUNT(*) FROM reviews WHERE place_id = :place_id"),
+                    {"place_id": place.id}
+                )
+                rating_data = rating_result.fetchone()
+                avg_rating = rating_data[0]
+                review_count = rating_data[1]
+                
+                # 평점이 없으면 0.0, 있으면 소수점 1자리로 반올림
+                rating = round(float(avg_rating), 1) if avg_rating else 0.0
+                
                 # 추천 결과 구성
                 recommendation = {
                     "place": PlaceOut(
@@ -120,7 +132,9 @@ async def get_recommendations(
                         distance_note=place.distance_note,
                         address=place.address,
                         hero_image_url=place.hero_image_url,
-                        budget_range=place.budget_range  # budget_range 필드 추가
+                        budget_range=place.budget_range,  # budget_range 필드 추가
+                        rating=rating,  # 계산된 평균 평점
+                        review_count=review_count  # 리뷰 개수
                     ),
                     "menu": MenuOut(
                         id=selected_menu.id,

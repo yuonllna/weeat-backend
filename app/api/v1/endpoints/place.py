@@ -84,78 +84,203 @@ async def get_all_places(
         )
 
 @router.get("/{place_id}", response_model=PlaceOut)
-async def get_place_detail(
-    place_id: int,
-    db: AsyncSession = Depends(get_database)
-):
-    """가게 상세 조회"""
+async def get_place_detail(place_id: int):
+    """가게 상세 조회 - 직접 연결 방식"""
     try:
-        place = await get_place(db, place_id)
-        if not place:
-            raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="가게를 찾을 수 없습니다."
-            )
-        return place
+        logger.info(f"직접 연결 방식으로 가게 상세 조회 시작 (ID: {place_id})...")
+        load_dotenv()
+        database_url = os.getenv("DATABASE_URL")
         
+        if not database_url:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="데이터베이스 URL이 설정되지 않았습니다."
+            )
+        
+        engine = create_async_engine(
+            database_url,
+            echo=False,
+            pool_pre_ping=True,
+            pool_size=1,
+            max_overflow=0,
+            pool_timeout=10
+        )
+        
+        async with engine.begin() as conn:
+            # 가게 존재 확인 및 데이터 조회
+            result = await conn.execute(
+                text("SELECT * FROM places WHERE id = :place_id"),
+                {"place_id": place_id}
+            )
+            place_data = result.fetchone()
+            
+            if not place_data:
+                await engine.dispose()
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="가게를 찾을 수 없습니다."
+                )
+            
+            # PlaceOut 형태로 변환
+            place = PlaceOut(
+                id=place_data[0],
+                name=place_data[1],
+                category=place_data[2],
+                distance_note=place_data[3],
+                address=place_data[4],
+                hero_image_url=place_data[5]
+            )
+            
+            await engine.dispose()
+            logger.info(f"가게 상세 조회 성공: {place.name}")
+            return place
+            
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"가게 상세 조회 실패 (ID: {place_id}): {str(e)}")
+        if 'engine' in locals():
+            await engine.dispose()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"가게 상세 조회 중 오류가 발생했습니다: {str(e)}"
         )
 
 @router.get("/{place_id}/reviews", response_model=List[ReviewOut])
-async def get_place_reviews(
-    place_id: int,
-    db: AsyncSession = Depends(get_database)
-):
-    """가게 리뷰 조회"""
+async def get_place_reviews(place_id: int):
+    """가게 리뷰 조회 - 직접 연결 방식"""
     try:
-        # 가게 존재 확인
-        place = await get_place(db, place_id)
-        if not place:
+        logger.info(f"직접 연결 방식으로 가게 리뷰 조회 시작 (ID: {place_id})...")
+        load_dotenv()
+        database_url = os.getenv("DATABASE_URL")
+        
+        if not database_url:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="가게를 찾을 수 없습니다."
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="데이터베이스 URL이 설정되지 않았습니다."
             )
         
-        reviews = await get_reviews_by_place(db, place_id)
-        return reviews
+        engine = create_async_engine(
+            database_url,
+            echo=False,
+            pool_pre_ping=True,
+            pool_size=1,
+            max_overflow=0,
+            pool_timeout=10
+        )
         
+        async with engine.begin() as conn:
+            # 가게 존재 확인
+            place_result = await conn.execute(
+                text("SELECT id FROM places WHERE id = :place_id"),
+                {"place_id": place_id}
+            )
+            if not place_result.fetchone():
+                await engine.dispose()
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="가게를 찾을 수 없습니다."
+                )
+            
+            # 리뷰 조회
+            result = await conn.execute(
+                text("SELECT * FROM reviews WHERE place_id = :place_id"),
+                {"place_id": place_id}
+            )
+            reviews_data = result.fetchall()
+            
+            # ReviewOut 형태로 변환
+            reviews = []
+            for row in reviews_data:
+                review = ReviewOut(
+                    id=row[0],
+                    place_id=row[1],
+                    user_id=row[2],
+                    rating=row[3],
+                    comment=row[4],
+                    created_at=row[5]
+                )
+                reviews.append(review)
+            
+            await engine.dispose()
+            logger.info(f"가게 리뷰 조회 성공: {len(reviews)}개")
+            return reviews
+            
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"가게 리뷰 조회 실패 (ID: {place_id}): {str(e)}")
+        if 'engine' in locals():
+            await engine.dispose()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"리뷰 조회 중 오류가 발생했습니다: {str(e)}"
         )
 
 @router.get("/{place_id}/menus", response_model=List[MenuOut])
-async def get_place_menus(
-    place_id: int,
-    db: AsyncSession = Depends(get_database)
-):
-    """가게 메뉴 조회"""
+async def get_place_menus(place_id: int):
+    """가게 메뉴 조회 - 직접 연결 방식"""
     try:
-        # 가게 존재 확인
-        place = await get_place(db, place_id)
-        if not place:
+        logger.info(f"직접 연결 방식으로 가게 메뉴 조회 시작 (ID: {place_id})...")
+        load_dotenv()
+        database_url = os.getenv("DATABASE_URL")
+        
+        if not database_url:
             raise HTTPException(
-                status_code=status.HTTP_404_NOT_FOUND,
-                detail="가게를 찾을 수 없습니다."
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="데이터베이스 URL이 설정되지 않았습니다."
             )
         
-        menus = await get_menus_by_place(db, place_id)
-        return menus
+        engine = create_async_engine(
+            database_url,
+            echo=False,
+            pool_pre_ping=True,
+            pool_size=1,
+            max_overflow=0,
+            pool_timeout=10
+        )
         
+        async with engine.begin() as conn:
+            # 가게 존재 확인
+            place_result = await conn.execute(
+                text("SELECT id FROM places WHERE id = :place_id"),
+                {"place_id": place_id}
+            )
+            if not place_result.fetchone():
+                await engine.dispose()
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="가게를 찾을 수 없습니다."
+                )
+            
+            # 메뉴 조회
+            result = await conn.execute(
+                text("SELECT * FROM menus WHERE place_id = :place_id"),
+                {"place_id": place_id}
+            )
+            menus_data = result.fetchall()
+            
+            # MenuOut 형태로 변환
+            menus = []
+            for row in menus_data:
+                menu = MenuOut(
+                    id=row[0],
+                    place_id=row[1],
+                    name=row[2],
+                    price=row[3]
+                )
+                menus.append(menu)
+            
+            await engine.dispose()
+            logger.info(f"가게 메뉴 조회 성공: {len(menus)}개")
+            return menus
+            
     except HTTPException:
         raise
     except Exception as e:
         logger.error(f"가게 메뉴 조회 실패 (ID: {place_id}): {str(e)}")
+        if 'engine' in locals():
+            await engine.dispose()
         raise HTTPException(
             status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail=f"메뉴 조회 중 오류가 발생했습니다: {str(e)}"

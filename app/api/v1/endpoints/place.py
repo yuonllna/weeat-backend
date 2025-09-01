@@ -6,7 +6,7 @@ from app.core.config import get_database
 from app.crud.place import get_places, get_place, get_places_by_category
 from app.crud.menu import get_menus_by_place
 from app.crud.review import get_reviews_by_place
-from app.schemas.place import PlaceOut
+from app.schemas.place import PlaceOut, PlaceDetailOut
 from app.schemas.menu import MenuOut
 from app.schemas.review import ReviewOut
 from typing import List, Optional
@@ -60,14 +60,30 @@ async def get_all_places(
             # PlaceOut 형태로 변환
             places = []
             for row in places_data:
+                place_id = row[0]
+                
+                # 해당 가게의 평균 평점과 리뷰 수 계산
+                rating_result = await conn.execute(
+                    text("SELECT AVG(rating), COUNT(*) FROM reviews WHERE place_id = :place_id"),
+                    {"place_id": place_id}
+                )
+                rating_data = rating_result.fetchone()
+                avg_rating = rating_data[0]
+                review_count = rating_data[1]
+                
+                # 평점이 없으면 0.0, 있으면 소수점 1자리로 반올림
+                rating = round(float(avg_rating), 1) if avg_rating else 0.0
+                
                 place = PlaceOut(
-                    id=row[0],
+                    id=place_id,
                     name=row[1],
                     category=row[2],
                     distance_note=row[3],
                     address=row[4],
                     hero_image_url=row[5],
-                    budget_range=row[6]  # budget_range 필드 추가
+                    budget_range=row[6],  # budget_range 필드 추가
+                    rating=rating,  # 계산된 평균 평점
+                    review_count=review_count  # 리뷰 개수
                 )
                 places.append(place)
             
@@ -84,7 +100,7 @@ async def get_all_places(
             detail=f"가게 조회 중 오류가 발생했습니다: {str(e)}"
         )
 
-@router.get("/{place_id}", response_model=PlaceOut)
+@router.get("/{place_id}", response_model=PlaceDetailOut)
 async def get_place_detail(place_id: int):
     """가게 상세 조회 - 직접 연결 방식"""
     try:
@@ -122,15 +138,48 @@ async def get_place_detail(place_id: int):
                     detail="가게를 찾을 수 없습니다."
                 )
             
-            # PlaceOut 형태로 변환
-            place = PlaceOut(
+            # 해당 가게의 평균 평점과 리뷰 수 계산
+            rating_result = await conn.execute(
+                text("SELECT AVG(rating), COUNT(*) FROM reviews WHERE place_id = :place_id"),
+                {"place_id": place_id}
+            )
+            rating_data = rating_result.fetchone()
+            avg_rating = rating_data[0]
+            review_count = rating_data[1]
+            
+            # 평점이 없으면 0.0, 있으면 소수점 1자리로 반올림
+            rating = round(float(avg_rating), 1) if avg_rating else 0.0
+            
+            # 해당 가게의 메뉴 조회
+            menu_result = await conn.execute(
+                text("SELECT * FROM menus WHERE place_id = :place_id"),
+                {"place_id": place_id}
+            )
+            menus_data = menu_result.fetchall()
+            
+            # MenuOut 형태로 변환
+            menus = []
+            for menu_row in menus_data:
+                menu = MenuOut(
+                    id=menu_row[0],
+                    place_id=menu_row[1],
+                    name=menu_row[2],
+                    price=menu_row[3]
+                )
+                menus.append(menu)
+            
+            # PlaceDetailOut 형태로 변환 (메뉴 포함)
+            place = PlaceDetailOut(
                 id=place_data[0],
                 name=place_data[1],
                 category=place_data[2],
                 distance_note=place_data[3],
                 address=place_data[4],
                 hero_image_url=place_data[5],
-                budget_range=place_data[6]  # budget_range 필드 추가
+                budget_range=place_data[6],  # budget_range 필드 추가
+                rating=rating,  # 계산된 평균 평점
+                review_count=review_count,  # 리뷰 개수
+                menus=menus  # 메뉴 목록
             )
             
             await engine.dispose()

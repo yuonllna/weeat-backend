@@ -1,4 +1,4 @@
-from sqlalchemy import Column, BigInteger, Text, CheckConstraint, Index
+from sqlalchemy import Column, BigInteger, Text, Integer, CheckConstraint, Index
 from . import Base
 
 class Place(Base):
@@ -9,6 +9,7 @@ class Place(Base):
     distance_note = Column(Text)
     address = Column(Text)
     hero_image_url = Column(Text)
+    budget_range = Column(Integer)  # 예산 범위 (원 단위)
 
     __table_args__ = (
         CheckConstraint(

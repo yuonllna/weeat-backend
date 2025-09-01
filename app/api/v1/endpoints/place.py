@@ -66,7 +66,8 @@ async def get_all_places(
                     category=row[2],
                     distance_note=row[3],
                     address=row[4],
-                    hero_image_url=row[5]
+                    hero_image_url=row[5],
+                    budget_range=row[6]  # budget_range 필드 추가
                 )
                 places.append(place)
             
@@ -128,7 +129,8 @@ async def get_place_detail(place_id: int):
                 category=place_data[2],
                 distance_note=place_data[3],
                 address=place_data[4],
-                hero_image_url=place_data[5]
+                hero_image_url=place_data[5],
+                budget_range=place_data[6]  # budget_range 필드 추가
             )
             
             await engine.dispose()

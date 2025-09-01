@@ -63,7 +63,8 @@ async def get_recommendations(
                     category=row[2],
                     distance_note=row[3],
                     address=row[4],
-                    hero_image_url=row[5]
+                    hero_image_url=row[5],
+                    budget_range=row[6]  # budget_range 필드 추가
                 )
                 places.append(place)
             
@@ -118,7 +119,8 @@ async def get_recommendations(
                         category=place.category,
                         distance_note=place.distance_note,
                         address=place.address,
-                        hero_image_url=place.hero_image_url
+                        hero_image_url=place.hero_image_url,
+                        budget_range=place.budget_range  # budget_range 필드 추가
                     ),
                     "menu": MenuOut(
                         id=selected_menu.id,

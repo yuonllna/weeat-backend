@@ -7,6 +7,7 @@ class PlaceBase(BaseModel):
     distance_note: Optional[str] = None
     address: Optional[str] = None
     hero_image_url: Optional[str] = None
+    budget_range: Optional[int] = None  # 예산 범위 (원 단위)
 
 class PlaceCreate(PlaceBase):
     pass
@@ -17,6 +18,7 @@ class PlaceUpdate(BaseModel):
     distance_note: Optional[str] = None
     address: Optional[str] = None
     hero_image_url: Optional[str] = None
+    budget_range: Optional[int] = None
 
 class PlaceOut(PlaceBase):
     id: int

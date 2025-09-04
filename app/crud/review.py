@@ -35,8 +35,8 @@ async def delete_review(db: AsyncSession, review_id: int):
         await db.commit()
     return review
 
-async def get_reviews_by_user(db: AsyncSession, user_id: int):
-    result = await db.execute(select(Review).where(Review.user_id == user_id))
+async def get_reviews_by_phone(db: AsyncSession, phone_number: str):
+    result = await db.execute(select(Review).where(Review.phone_number == phone_number))
     return result.scalars().all()
 
 async def get_all_reviews(db: AsyncSession):

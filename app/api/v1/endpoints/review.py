@@ -1,59 +1,184 @@
-from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.ext.asyncio import AsyncSession
+from fastapi import APIRouter, Depends, HTTPException, status, Form, File, UploadFile
+from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy import text
 from app.core.config import get_database
-from app.crud.review import create_review, get_review, update_review, delete_review
+from app.crud.review import create_review, get_review, update_review, delete_review, get_reviews_by_phone
 from app.crud.place import get_place
-from app.models.user import User
 from app.models.review import Review
 from app.schemas.review import ReviewCreate, ReviewOut, ReviewUpdate
-from app.api.deps import get_current_user, get_optional_current_user
-from typing import List
+from typing import List, Optional
+import os
+import time
+from dotenv import load_dotenv
 
 router = APIRouter()
 
 @router.post("/{place_id}/reviews", response_model=ReviewOut)
 async def create_place_review(
     place_id: int,
-    review_data: ReviewCreate,
-    current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_database)
+    phone_number: str = Form(...),
+    rating: int = Form(...),
+    content: Optional[str] = Form(None),
+    files: Optional[List[UploadFile]] = File(None),
+    file: Optional[UploadFile] = File(None),
+    image: Optional[UploadFile] = File(None),
+    photos: Optional[List[UploadFile]] = File(None)
 ):
-    """가게 리뷰 작성"""
-    # 가게 존재 확인
-    place = await get_place(db, place_id)
-    if not place:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail="가게를 찾을 수 없습니다."
+    """가게 리뷰 작성 (multipart/form-data 지원) - 직접 연결 방식"""
+    try:
+        print(f"DEBUG: place_id = {place_id}")
+        print(f"DEBUG: phone_number = {phone_number}")
+        print(f"DEBUG: rating = {rating}")
+        print(f"DEBUG: content = {content}")
+        print(f"DEBUG: files = {files}")
+        print(f"DEBUG: file = {file}")
+        print(f"DEBUG: image = {image}")
+        print(f"DEBUG: photos = {photos}")
+        
+        # 모든 파일 필드 확인
+        all_files = []
+        if files:
+            all_files.extend(files)
+        if file:
+            all_files.append(file)
+        if image:
+            all_files.append(image)
+        if photos:
+            all_files.extend(photos)
+            
+        print(f"DEBUG: 총 파일 개수 = {len(all_files)}")
+        
+        load_dotenv()
+        database_url = os.getenv("DATABASE_URL")
+        
+        if not database_url:
+            raise HTTPException(
+                status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail="데이터베이스 URL이 설정되지 않았습니다."
+            )
+        
+        # 직접 연결 방식
+        engine = create_async_engine(
+            database_url,
+            echo=False,
+            pool_pre_ping=True,
+            pool_size=1,
+            max_overflow=0,
+            pool_timeout=10
         )
-    
-    # 리뷰 데이터 검증
-    if review_data.rating < 1 or review_data.rating > 5:
+        
+        async with engine.begin() as conn:
+            # 가게 존재 확인
+            place_result = await conn.execute(
+                text("SELECT id FROM places WHERE id = :place_id"),
+                {"place_id": place_id}
+            )
+            if not place_result.fetchone():
+                await engine.dispose()
+                raise HTTPException(
+                    status_code=status.HTTP_404_NOT_FOUND,
+                    detail="가게를 찾을 수 없습니다."
+                )
+            
+            # 리뷰 데이터 검증
+            if rating < 1 or rating > 5:
+                await engine.dispose()
+                raise HTTPException(
+                    status_code=status.HTTP_400_BAD_REQUEST,
+                    detail="평점은 1-5 사이의 값이어야 합니다."
+                )
+            
+            # 파일 저장 및 URL 생성
+            photo_urls = None
+            if all_files:
+                print(f"DEBUG: 파일 개수 = {len(all_files)}")
+                file_urls = []
+                for i, file in enumerate(all_files):
+                    print(f"DEBUG: 파일 {i} = {file.filename}, 크기 = {file.size if hasattr(file, 'size') else 'unknown'}")
+                    if file.filename:
+                        try:
+                            # 파일 저장
+                            file_content = await file.read()
+                            print(f"DEBUG: 파일 내용 크기 = {len(file_content)} bytes")
+                            
+                            file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
+                            unique_filename = f"review_{place_id}_{int(time.time())}_{i}.{file_extension}"
+                            
+                            # 파일 저장 경로 (static 폴더에 저장)
+                            static_dir = "static/uploads"
+                            os.makedirs(static_dir, exist_ok=True)
+                            file_path = os.path.join(static_dir, unique_filename)
+                            
+                            print(f"DEBUG: 파일 저장 경로 = {file_path}")
+                            
+                            with open(file_path, "wb") as f:
+                                f.write(file_content)
+                            
+                            print(f"DEBUG: 파일 저장 완료 = {file_path}")
+                            
+                            # URL 생성
+                            file_url = f"/static/uploads/{unique_filename}"
+                            file_urls.append(file_url)
+                            print(f"DEBUG: 생성된 URL = {file_url}")
+                            
+                        except Exception as e:
+                            print(f"ERROR: 파일 저장 실패 = {str(e)}")
+                            continue
+                
+                photo_urls = str(file_urls) if file_urls else None
+                print(f"DEBUG: 최종 photo_urls = {photo_urls}")
+            else:
+                print("DEBUG: 모든 파일 필드가 None이거나 비어있음")
+            
+            # 리뷰 생성 (직접 SQL)
+            result = await conn.execute(
+                text("""
+                    INSERT INTO reviews (place_id, phone_number, rating, content, photo_urls, created_at)
+                    VALUES (:place_id, :phone_number, :rating, :content, :photo_urls, NOW())
+                    RETURNING id, place_id, phone_number, rating, content, photo_urls, created_at
+                """),
+                {
+                    "place_id": place_id,
+                    "phone_number": phone_number,
+                    "rating": rating,
+                    "content": content,
+                    "photo_urls": photo_urls
+                }
+            )
+            
+            review_data = result.fetchone()
+            
+            await engine.dispose()
+            
+            # ReviewOut 형태로 변환
+            review = ReviewOut(
+                id=review_data[0],
+                place_id=review_data[1],
+                phone_number=review_data[2],
+                rating=review_data[3],
+                content=review_data[4],
+                photo_urls=review_data[5],
+                created_at=review_data[6]
+            )
+            
+            print(f"DEBUG: 리뷰 생성 성공: {review.id}")
+            return review
+            
+    except HTTPException:
+        raise
+    except Exception as e:
+        print(f"ERROR: 리뷰 생성 실패: {str(e)}")
+        if 'engine' in locals():
+            await engine.dispose()
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="평점은 1-5 사이의 값이어야 합니다."
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail=f"리뷰 생성 중 오류가 발생했습니다: {str(e)}"
         )
-    
-    # 리뷰 생성
-    review = Review(
-        place_id=place_id,
-        user_id=current_user.id,
-        rating=review_data.rating,
-        content=review_data.content,
-        visited_at=review_data.visited_at,
-        menu=review_data.menu,
-        price_text=review_data.price_text,
-        photo_url=review_data.photo_url
-    )
-    
-    created_review = await create_review(db, review)
-    return created_review
 
 @router.put("/reviews/{review_id}", response_model=ReviewOut)
 async def update_place_review(
     review_id: int,
     review_data: ReviewUpdate,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_database)
 ):
     """리뷰 수정"""
@@ -63,13 +188,6 @@ async def update_place_review(
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="리뷰를 찾을 수 없습니다."
-        )
-    
-    # 권한 확인 (자신의 리뷰만 수정 가능)
-    if review.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="자신의 리뷰만 수정할 수 있습니다."
         )
     
     # 평점 검증
@@ -88,7 +206,6 @@ async def update_place_review(
 @router.delete("/reviews/{review_id}")
 async def delete_place_review(
     review_id: int,
-    current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_database)
 ):
     """리뷰 삭제"""
@@ -100,12 +217,14 @@ async def delete_place_review(
             detail="리뷰를 찾을 수 없습니다."
         )
     
-    # 권한 확인 (자신의 리뷰만 삭제 가능)
-    if review.user_id != current_user.id:
-        raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN,
-            detail="자신의 리뷰만 삭제할 수 있습니다."
-        )
-    
     await delete_review(db, review_id)
     return {"message": "리뷰가 삭제되었습니다."}
+
+@router.get("/reviews/phone/{phone_number}", response_model=List[ReviewOut])
+async def get_reviews_by_phone_number(
+    phone_number: str,
+    db: AsyncSession = Depends(get_database)
+):
+    """전화번호로 리뷰 조회"""
+    reviews = await get_reviews_by_phone(db, phone_number)
+    return reviews

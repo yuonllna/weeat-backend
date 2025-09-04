@@ -41,10 +41,7 @@ async def get_database() -> AsyncGenerator[AsyncSession, None]:
         finally:
             await session.close()
 
-# 환경 변수
-SECRET_KEY = os.getenv("SECRET_KEY", "your-secret-key-here")
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES", "30"))
+# 환경 변수 (인증 관련 설정 제거됨)
 
 # API 설정
 API_V1_STR = "/api/v1"

@@ -1,9 +1,11 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
 from app.api.v1.routers import api_router
 from app.core.config import get_database
 from app.models import Base
 from sqlalchemy.ext.asyncio import AsyncEngine
+import os
 
 app = FastAPI(
     title="WeEat API",
@@ -19,6 +21,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# Static 파일 서빙 설정
+os.makedirs("static/uploads", exist_ok=True)
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # API 라우터 등록
 app.include_router(api_router, prefix="/api/v1")

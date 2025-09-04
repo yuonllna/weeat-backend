@@ -246,10 +246,11 @@ async def get_place_reviews(place_id: int):
                 review = ReviewOut(
                     id=row[0],
                     place_id=row[1],
-                    user_id=row[2],
+                    phone_number=row[2],
                     rating=row[3],
-                    comment=row[4],
-                    created_at=row[5]
+                    content=row[4],
+                    photo_urls=row[5],
+                    created_at=row[6]
                 )
                 reviews.append(review)
             

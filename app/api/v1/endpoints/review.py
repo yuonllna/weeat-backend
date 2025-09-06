@@ -9,6 +9,8 @@ from app.schemas.review import ReviewCreate, ReviewOut, ReviewUpdate
 from typing import List, Optional
 import os
 import time
+import boto3
+from botocore.exceptions import ClientError
 from dotenv import load_dotenv
 
 router = APIRouter()
@@ -104,22 +106,33 @@ async def create_place_review(
                             file_extension = file.filename.split('.')[-1] if '.' in file.filename else 'jpg'
                             unique_filename = f"review_{place_id}_{int(time.time())}_{i}.{file_extension}"
                             
-                            # 파일 저장 경로 (static 폴더에 저장)
-                            static_dir = "static/uploads"
-                            os.makedirs(static_dir, exist_ok=True)
-                            file_path = os.path.join(static_dir, unique_filename)
+                            # S3 업로드
+                            s3_client = boto3.client(
+                                's3',
+                                aws_access_key_id=os.getenv('AWS_ACCESS_KEY_ID'),
+                                aws_secret_access_key=os.getenv('AWS_SECRET_ACCESS_KEY'),
+                                region_name=os.getenv('AWS_REGION', 'ap-northeast-2')
+                            )
                             
-                            print(f"DEBUG: 파일 저장 경로 = {file_path}")
+                            bucket_name = os.getenv('AWS_S3_BUCKET_NAME')
+                            s3_key = f"reviews/{unique_filename}"
                             
-                            with open(file_path, "wb") as f:
-                                f.write(file_content)
+                            print(f"DEBUG: S3 업로드 시작 - 버킷: {bucket_name}, 키: {s3_key}")
                             
-                            print(f"DEBUG: 파일 저장 완료 = {file_path}")
+                            # S3에 파일 업로드
+                            s3_client.put_object(
+                                Bucket=bucket_name,
+                                Key=s3_key,
+                                Body=file_content,
+                                ContentType=file.content_type or 'image/jpeg'
+                            )
                             
-                            # URL 생성
-                            file_url = f"/static/uploads/{unique_filename}"
+                            print(f"DEBUG: S3 업로드 완료")
+                            
+                            # S3 URL 생성
+                            file_url = f"https://{bucket_name}.s3.{os.getenv('AWS_REGION', 'ap-northeast-2')}.amazonaws.com/{s3_key}"
                             file_urls.append(file_url)
-                            print(f"DEBUG: 생성된 URL = {file_url}")
+                            print(f"DEBUG: 생성된 S3 URL = {file_url}")
                             
                         except Exception as e:
                             print(f"ERROR: 파일 저장 실패 = {str(e)}")
